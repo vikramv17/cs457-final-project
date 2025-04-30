@@ -1,0 +1,2 @@
+data/*.json
+/bert-finetuned-sem_eval-english
