@@ -6,9 +6,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, roc_auc_score, accuracy_score
 from transformers import EvalPrediction
 import torch
+from transformers import TrainingArguments, Trainer
 
 df = pd.read_parquet('./data/train-data.parquet')
-df_trump = pd.read_json('./data/tweets.json')
+print(df.head())
 
 # map all columns with true/false labels to 1 for true and 0 for false
 def map_labels(df):
@@ -16,19 +17,25 @@ def map_labels(df):
         if df[col].dtype == 'bool':
             df[col] = df[col].astype(int)
         elif np.issubdtype(df[col].dtype, np.floating):
-            df[col] = (df[col] > 2).astype(int)
+            if col == "hate_speech_score":
+                df[col] = (df[col] > 0.5).astype(int)
+            elif col == "hatespeech":
+                df[col] = (df[col] > 1).astype(int)
+            else:
+                df[col] = (df[col] > 2).astype(int)
     return df
 
 # drop all columns with annotator in the name
 df = df.loc[:, ~df.columns.str.contains('annotator')]
-df = df.drop(columns=["infitms", "outfitms", "std_err", "hypothesis", "platform", "hate_speech_score"])
+df = df.drop(columns=["infitms", "outfitms", "std_err", "hypothesis", "platform"])
 df = map_labels(df)
+
 # train test split
-# df_train, df_test = train_test_split(df, test_size=0.4, random_state=42)
-# df_test, df_dev = train_test_split(df_test, test_size=0.5, random_state=42)
-df_extra, df_train = train_test_split(df, test_size=0.01, random_state=42)
-df_train, df_test = train_test_split(df_train, test_size=0.4, random_state=42)
+df_train, df_test = train_test_split(df, test_size=0.4, random_state=42)
 df_test, df_dev = train_test_split(df_test, test_size=0.5, random_state=42)
+# df_extra, df_train = train_test_split(df, test_size=0.01, random_state=42)
+# df_train, df_test = train_test_split(df_train, test_size=0.4, random_state=42)
+# df_test, df_dev = train_test_split(df_test, test_size=0.5, random_state=42)
 df_train = df_train.reset_index(drop=True)
 df_test = df_test.reset_index(drop=True)
 df_dev = df_dev.reset_index(drop=True)
@@ -45,6 +52,7 @@ label2id = {label:idx for idx, label in enumerate(labels)}
 
 X_train = df_train["text"].reset_index()
 y_train = df_train.drop(columns=["text"])
+print(X_train.head())
 
 max_length = X_train["text"].str.len().max()
 print(f"Maximum length of text: {max_length}")
@@ -82,8 +90,6 @@ model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased",
 
 batch_size = 8
 metric_name = "f1"
-
-from transformers import TrainingArguments, Trainer
 
 args = TrainingArguments(
     f"bert-finetuned-hate-speech",
@@ -131,11 +137,15 @@ trainer = Trainer(
     args,
     train_dataset=encoded_dataset["train"],
     eval_dataset=encoded_dataset["dev"],
-    processing_class=tokenizer,
+    tokenizer=tokenizer,
     compute_metrics=compute_metrics
 )
 
-# trainer.train()
+print("Training model...")
+
+trainer.train()
 
 # save the weights
-# trainer.save_model("bert-finetuned-hate-speech")
+trainer.save_model("bert-finetuned-hate-speech")
+
+print("Done training model.")
